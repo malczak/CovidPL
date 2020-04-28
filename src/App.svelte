@@ -6,7 +6,8 @@
   let promise = null;
   let days = [];
   let index = 0;
-  let stats = { min: 0, max: 0, sick: 0, dead: 0 };
+  let allTimeStats = { min: 0, max: 0 };
+  let dayStats = { min: 0, max: 0, sick: 0, dead: 0 };
   $: {
     mapDay(days[index]);
   }
@@ -75,22 +76,8 @@
   const urlForDate = date =>
     `${DATA_ENDPOINT}`.replace("%DATE%", formatDate(date));
 
-  const mapDay = data => {
-    [
-      ...document.querySelectorAll(".area > path"),
-      ...document.querySelectorAll(".area > polygon")
-    ].forEach(node => {
-      node.style.fill = Palette[0];
-    });
-
-    if (!data) {
-      return;
-    }
-
-    data = migrateData(data);
-
-    const records = data.records;
-    stats = records.reduce(
+  const getStats = records =>
+    records.reduce(
       (accum, item) => {
         const v = item.count;
         item.value = v;
@@ -108,10 +95,34 @@
       }
     );
 
+  const updateAllTimeStats = () => {
+    allTimeStats = {
+      min: getStats(days[0].records).max,
+      max: getStats(days[days.length - 1].records).max
+    };
+    console.log(allTimeStats);
+  };
+
+  const mapDay = data => {
+    [
+      ...document.querySelectorAll(".area > path"),
+      ...document.querySelectorAll(".area > polygon")
+    ].forEach(node => {
+      node.style.fill = Palette[0];
+    });
+
+    if (!data) {
+      return;
+    }
+
+    const records = data.records;
+    dayStats = getStats(records);
+
     const offset = 1;
     records.forEach(item => {
       const v = item.count;
-      const unified = (v - stats.min) / (stats.max - stats.min);
+      const unified =
+        (v - allTimeStats.min) / (allTimeStats.max - allTimeStats.min);
       const scaledValue =
         offset + Math.round(unified * (Palette.length - offset));
       const color = Palette[Math.min(scaledValue, Palette.length - 1)];
@@ -133,12 +144,14 @@
         fetch(urlForDate(date))
           .then(data => data.json())
           .then(records => ({ date, records }))
+          .then(data => migrateData(data))
       )
     ]).then(result => {
       days = days.concat(result);
+      updateAllTimeStats();
       setInterval(() => {
         index = (index + 1) % days.length;
-      }, 1000);
+      }, 500);
     });
   });
 </script>
@@ -207,11 +220,11 @@
         </div>
         <div>
           Confirmed:
-          <span class="s1">{stats.sick}</span>
+          <span class="s1">{dayStats.sick}</span>
         </div>
         <div>
           Deaths:
-          <span class="s2">{stats.dead}</span>
+          <span class="s2">{dayStats.dead}</span>
         </div>
         <div class="pal">
           <svg
@@ -220,14 +233,22 @@
             {#each Palette as color, index}
               <rect x={index * 10} y="0" width="10" height="20" fill={color} />
             {/each}
+            <rect
+              x="0"
+              y="0"
+              width={`${(dayStats.max / allTimeStats.max) * 100}%`}
+              height="20"
+              stroke="black"
+              fill="none" />
           </svg>
           <span class="min">0</span>
-          <span class="max">{stats.max}</span>
+          <span class="max">{allTimeStats.max}</span>
         </div>
       </div>
 
-    {:catch _}
+    {:catch e}
       <span>Ups</span>
+      <small>{e}</small>
     {/await}
   {/if}
 
